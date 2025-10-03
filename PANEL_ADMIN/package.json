@@ -1,0 +1,19 @@
+{
+  "name": "panel_admin",
+  "version": "1.0.0",
+  "description": "Panel admin pour le projet de multi 1",
+  "main": "panel_admin.js",
+  "scripts": {
+    "start": "node panel_admin.js",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "vite": "^6.3.6"
+  },
+  "dependencies": {
+    "express": "^5.1.0"
+  }
+}
