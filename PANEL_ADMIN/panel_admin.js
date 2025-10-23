@@ -9,6 +9,55 @@ app.use(express.json());
 app.get('/', (req, res) => {
   res.send(`<!DOCTYPE html>
 <html lang="fr">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      input {
+        padding: 8px;
+        margin: 5px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+      }
+      button {
+        padding: 8px 16px;
+        margin: 5px;
+        background-color: #007bff;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      button:hover {
+        background-color: #0056b3;
+      }
+      ul {
+        list-style: none;
+        padding: 0;
+      }
+      li {
+        padding: 10px;
+        margin: 5px 0;
+        background-color: #f5f5f5;
+        border-radius: 4px;
+      }
+      li button {
+        background-color: #dc3545;
+        padding: 4px 12px;
+        font-size: 12px;
+      }
+      li button:hover {
+        background-color: #c82333;
+      }
+    </style>
+  </head>
   <body>
     <h2>Admin Login</h2>
     <input id="username" type="text" placeholder="Username" />
@@ -18,6 +67,8 @@ app.get('/', (req, res) => {
     <div id="admin-status"></div>
 
     <div id="admin-section" style="display:none;">
+      <button onclick="logout()">Logout</button>
+      
       <h3>Search</h3>
       <input id="searchInput" type="text" placeholder="Search users, groups, messages" />
       <button id="searchBtn">Search</button>
@@ -40,10 +91,51 @@ app.get('/', (req, res) => {
       const API_BASE_URL = "${API_BASE_URL}";
       let usersOffset = 0, groupsOffset = 0, messagesOffset = 0;
       const limit = 10;
+      let accessToken = null;
+      
+      function getAuthHeaders() {
+        return {
+          'Content-Type': 'application/json',
+          'Authorization': accessToken ? 'Bearer ' + accessToken : ''
+        };
+      }
+
+      async function refreshAccessToken() {
+        try {
+          const res = await fetch(API_BASE_URL + '/auth/refresh', {
+            method: 'POST',
+            credentials: 'include' 
+          });
+          if (!res.ok) throw new Error("Token refresh failed");
+          const data = await res.json();
+          accessToken = data.accessToken;
+          return true;
+        } catch (err) {
+          console.error("Erreur refresh token:", err);
+          handleLogout();
+          return false;
+        }
+      }
+      
+      async function authenticatedFetch(url, options = {}) {
+        options.headers = getAuthHeaders();
+        options.credentials = 'include';
+        
+        let res = await fetch(url, options);
+        if (res.status === 401 || res.status === 403) {
+          const refreshed = await refreshAccessToken();
+          if (refreshed) {
+            options.headers = getAuthHeaders();
+            res = await fetch(url, options);
+          }
+        }
+        
+        return res;
+      }
 
       async function loadList(endpoint, listId, offset) {
         try {
-          const res = await fetch(\`\${API_BASE_URL}/\${endpoint}?limit=\${limit}&offset=\${offset}\`);
+          const res = await authenticatedFetch(API_BASE_URL + '/' + endpoint + '?limit=' + limit + '&offset=' + offset);
           if (!res.ok) throw new Error("Erreur API");
           const json = await res.json();
           const items = Array.isArray(json.data) ? json.data : (Array.isArray(json) ? json : []);
@@ -54,7 +146,7 @@ app.get('/', (req, res) => {
             const btn = document.createElement("button");
             btn.textContent = "Supprimer";
             btn.onclick = async () => {
-              await fetch(\`\${API_BASE_URL}/\${endpoint}/\${item.id}\`, { method: "DELETE" });
+              await authenticatedFetch(API_BASE_URL + '/' + endpoint + '/' + item.id, { method: "DELETE" });
               li.remove();
             };
             li.appendChild(btn);
@@ -78,6 +170,14 @@ app.get('/', (req, res) => {
         messagesOffset = 0;
       }
 
+      function handleLogout() {
+        accessToken = null;
+        document.getElementById('admin-section').style.display = 'none';
+        document.getElementById('admin-status').textContent = '';
+        clearLists();
+        alert("Session expirée. Veuillez vous reconnecter.");
+      }
+
       document.getElementById("load-more-users").onclick = () => {
         loadList("users", "users", usersOffset);
         usersOffset += limit;
@@ -97,7 +197,7 @@ app.get('/', (req, res) => {
         resultsDiv.innerHTML = "<h4>Résultats de recherche</h4>";
         if (!q) return;
         try {
-          const res = await fetch(\`\${API_BASE_URL}/search/\${encodeURIComponent(q)}\`);
+          const res = await authenticatedFetch(API_BASE_URL + '/search/' + encodeURIComponent(q));
           if (!res.ok) throw new Error("Erreur API");
           const json = await res.json();
           const ul = document.createElement("ul");
@@ -107,7 +207,7 @@ app.get('/', (req, res) => {
             const btn = document.createElement("button");
             btn.textContent = "Supprimer";
             btn.onclick = async () => {
-              await fetch(\`\${API_BASE_URL}/users/\${u.id}\`, { method: "DELETE" });
+              await authenticatedFetch(API_BASE_URL + '/users/' + u.id, { method: "DELETE" });
               li.remove();
             };
             li.appendChild(btn);
@@ -119,7 +219,7 @@ app.get('/', (req, res) => {
             const btn = document.createElement("button");
             btn.textContent = "Supprimer";
             btn.onclick = async () => {
-              await fetch(\`\${API_BASE_URL}/groups/\${g.id}\`, { method: "DELETE" });
+              await authenticatedFetch(API_BASE_URL + '/groups/' + g.id, { method: "DELETE" });
               li.remove();
             };
             li.appendChild(btn);
@@ -131,7 +231,7 @@ app.get('/', (req, res) => {
             const btn = document.createElement("button");
             btn.textContent = "Supprimer";
             btn.onclick = async () => {
-              await fetch(\`\${API_BASE_URL}/messages/\${m.id}\`, { method: "DELETE" });
+              await authenticatedFetch(API_BASE_URL + '/messages/' + m.id, { method: "DELETE" });
               li.remove();
             };
             li.appendChild(btn);
@@ -150,20 +250,26 @@ app.get('/', (req, res) => {
         const statusDiv = document.getElementById('admin-status');
         const section = document.getElementById('admin-section');
         try {
-          const res = await fetch(\`\${API_BASE_URL}/users/login\`, {
+          const res = await fetch(API_BASE_URL + '/auth/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
             body: JSON.stringify({ username, password })
           });
           if (!res.ok) throw new Error("Échec de la connexion : identifiants invalides");
-          const loggedUser = await res.json();
-          if (loggedUser.role !== "admin") {
+          const data = await res.json();
+          
+          accessToken = data.accessToken;
+          
+          if (data.user.role !== "admin") {
             statusDiv.textContent = "NOT ADMIN";
             statusDiv.style.color = "red";
             section.style.display = "none";
             clearLists();
+            accessToken = null;
             throw new Error("Accès refusé : vous n'êtes pas admin");
           }
+          
           statusDiv.textContent = "USER IS ADMIN";
           statusDiv.style.color = "green";
           errorDiv.textContent = "";
@@ -180,11 +286,23 @@ app.get('/', (req, res) => {
           }
         }
       };
+
+      window.logout = async function () {
+        try {
+          await fetch(API_BASE_URL + '/auth/logout', {
+            method: 'POST',
+            credentials: 'include'
+          });
+        } catch (err) {
+          console.error("Erreur logout:", err);
+        }
+        handleLogout();
+      };
     </script>
   </body>
 </html>`);
 });
 
 app.listen(PORT, () => {
-  console.log(`Admin Panel is running at: http://localhost:\${PORT}`);
+  console.log(`Admin Panel is running at: http://localhost:${PORT}`);
 });
