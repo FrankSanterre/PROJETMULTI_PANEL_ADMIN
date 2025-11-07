@@ -1,7 +1,7 @@
 const express = require('express');
 const app = express();
 
-const API_BASE_URL = 'http://localhost:3000';
+const API_BASE_URL = 'https://bobberchat.com';
 const PORT = 3002;
 
 app.use(express.json());
@@ -56,6 +56,10 @@ app.get('/', (req, res) => {
       li button:hover {
         background-color: #c82333;
       }
+      .section-title {
+        margin-top: 20px;
+        color: #333;
+      }
     </style>
   </head>
   <body>
@@ -78,9 +82,13 @@ app.get('/', (req, res) => {
       <ul id="users"></ul>
       <button id="load-more-users">Charger plus</button>
 
-      <h3>Salons</h3>
-      <ul id="groups"></ul>
-      <button id="load-more-groups">Charger plus</button>
+      <h3 class="section-title">Salons Privés</h3>
+      <ul id="private-groups"></ul>
+      <button id="load-more-private-groups">Charger plus</button>
+
+      <h3 class="section-title">Salons Publics</h3>
+      <ul id="public-groups"></ul>
+      <button id="load-more-public-groups">Charger plus</button>
 
       <h3>Messages</h3>
       <ul id="messages"></ul>
@@ -89,7 +97,8 @@ app.get('/', (req, res) => {
 
     <script>
       const API_BASE_URL = "${API_BASE_URL}";
-      let usersOffset = 0, groupsOffset = 0, messagesOffset = 0;
+      let usersOffset = 0, messagesOffset = 0;
+      let lastPrivateGroupId = null, lastPublicGroupId = null;
       const limit = 10;
       let accessToken = null;
       
@@ -135,7 +144,7 @@ app.get('/', (req, res) => {
 
       async function loadList(endpoint, listId, offset) {
         try {
-          const res = await authenticatedFetch(API_BASE_URL + '/' + endpoint + '?limit=' + limit + '&offset=' + offset);
+          const res = await authenticatedFetch(API_BASE_URL + '/api/' + endpoint + '?limit=' + limit + '&offset=' + offset);
           if (!res.ok) throw new Error("Erreur API");
           const json = await res.json();
           const items = Array.isArray(json.data) ? json.data : (Array.isArray(json) ? json : []);
@@ -157,17 +166,58 @@ app.get('/', (req, res) => {
         }
       }
 
+      async function loadGroupsByType(type, listId, lastId) {
+        try {
+          const url = lastId 
+            ? API_BASE_URL + '/api/groups/next/' + type + '/' + lastId
+            : API_BASE_URL + '/api/groups/next/' + type + '/0';
+          
+          const res = await authenticatedFetch(url);
+          if (!res.ok) throw new Error("Erreur API");
+          const json = await res.json();
+          const items = Array.isArray(json.data) ? json.data : (Array.isArray(json) ? json : []);
+          const ul = document.getElementById(listId);
+          
+          items.forEach(item => {
+            const li = document.createElement("li");
+            li.textContent = JSON.stringify(item);
+            const btn = document.createElement("button");
+            btn.textContent = "Supprimer";
+            btn.onclick = async () => {
+              await authenticatedFetch(API_BASE_URL + '/api/groups/' + item.id, { method: "DELETE" });
+              li.remove();
+            };
+            li.appendChild(btn);
+            ul.appendChild(li);
+          });
+          
+          // Mettre à jour le dernier ID
+          if (items.length > 0) {
+            const lastItem = items[items.length - 1];
+            if (type === 'private') {
+              lastPrivateGroupId = lastItem.id;
+            } else {
+              lastPublicGroupId = lastItem.id;
+            }
+          }
+        } catch (err) {
+          console.error("Erreur loadGroupsByType:", err);
+        }
+      }
+
       function clearLists() {
         document.getElementById("users").innerHTML = "";
-        document.getElementById("groups").innerHTML = "";
+        document.getElementById("private-groups").innerHTML = "";
+        document.getElementById("public-groups").innerHTML = "";
         document.getElementById("messages").innerHTML = "";
       }
 
       function resetLists() {
         clearLists();
         usersOffset = 0;
-        groupsOffset = 0;
         messagesOffset = 0;
+        lastPrivateGroupId = null;
+        lastPublicGroupId = null;
       }
 
       function handleLogout() {
@@ -182,10 +232,15 @@ app.get('/', (req, res) => {
         loadList("users", "users", usersOffset);
         usersOffset += limit;
       };
-      document.getElementById("load-more-groups").onclick = () => {
-        loadList("groups", "groups", groupsOffset);
-        groupsOffset += limit;
+      
+      document.getElementById("load-more-private-groups").onclick = () => {
+        loadGroupsByType("private", "private-groups", lastPrivateGroupId);
       };
+      
+      document.getElementById("load-more-public-groups").onclick = () => {
+        loadGroupsByType("public", "public-groups", lastPublicGroupId);
+      };
+      
       document.getElementById("load-more-messages").onclick = () => {
         loadList("messages", "messages", messagesOffset);
         messagesOffset += limit;
@@ -197,7 +252,7 @@ app.get('/', (req, res) => {
         resultsDiv.innerHTML = "<h4>Résultats de recherche</h4>";
         if (!q) return;
         try {
-          const res = await authenticatedFetch(API_BASE_URL + '/search/' + encodeURIComponent(q));
+          const res = await authenticatedFetch(API_BASE_URL + '/api/search/' + encodeURIComponent(q));
           if (!res.ok) throw new Error("Erreur API");
           const json = await res.json();
           const ul = document.createElement("ul");
@@ -207,7 +262,7 @@ app.get('/', (req, res) => {
             const btn = document.createElement("button");
             btn.textContent = "Supprimer";
             btn.onclick = async () => {
-              await authenticatedFetch(API_BASE_URL + '/users/' + u.id, { method: "DELETE" });
+              await authenticatedFetch(API_BASE_URL + '/api/users/' + u.id, { method: "DELETE" });
               li.remove();
             };
             li.appendChild(btn);
@@ -219,7 +274,7 @@ app.get('/', (req, res) => {
             const btn = document.createElement("button");
             btn.textContent = "Supprimer";
             btn.onclick = async () => {
-              await authenticatedFetch(API_BASE_URL + '/groups/' + g.id, { method: "DELETE" });
+              await authenticatedFetch(API_BASE_URL + '/api/groups/' + g.id, { method: "DELETE" });
               li.remove();
             };
             li.appendChild(btn);
@@ -231,7 +286,7 @@ app.get('/', (req, res) => {
             const btn = document.createElement("button");
             btn.textContent = "Supprimer";
             btn.onclick = async () => {
-              await authenticatedFetch(API_BASE_URL + '/messages/' + m.id, { method: "DELETE" });
+              await authenticatedFetch(API_BASE_URL + '/api/messages/' + m.id, { method: "DELETE" });
               li.remove();
             };
             li.appendChild(btn);
@@ -276,7 +331,8 @@ app.get('/', (req, res) => {
           section.style.display = "block";
           resetLists();
           document.getElementById("load-more-users").click();
-          document.getElementById("load-more-groups").click();
+          document.getElementById("load-more-private-groups").click();
+          document.getElementById("load-more-public-groups").click();
           document.getElementById("load-more-messages").click();
         } catch (err) {
           errorDiv.textContent = err.message || "Erreur inconnue";
